@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 
 // ─── MST LAYOUTS ───
 const MST_LAYOUTS = [
@@ -37,6 +37,28 @@ function genKnapsack(){let items,C,attempts=0;do{items=[];for(let i=0;i<3;i++)it
 function ksSlv(items,C,strategy){let sorted;if(strategy==="value")sorted=[...items].sort((a,b)=>b.v-a.v);else if(strategy==="weight")sorted=[...items].sort((a,b)=>a.w-b.w);else sorted=[...items].map(it=>({...it,ratio:it.v/it.w})).sort((a,b)=>b.ratio-a.ratio);let cap=C,profit=0;const steps=[];for(const it of sorted){if(cap<=0)break;if(it.w<=cap){profit+=it.v;steps.push({id:it.id,fraction:1,gained:it.v,totalProfit:profit,capLeft:cap-it.w});cap-=it.w}else{const frac=cap/it.w,gained=frac*it.v;profit+=gained;steps.push({id:it.id,fraction:frac,gained,totalProfit:profit,capLeft:0});cap=0}}return{profit,steps,order:sorted.map(s=>s.id)}}
 
 const R=(n,d=2)=>Math.round(n*Math.pow(10,d))/Math.pow(10,d);
+
+// ─── ACTIVITY SELECTION ───
+function solveOptimal(ivs){if(ivs.length===0)return[];var s=ivs.slice().sort(function(a,b){return a.end-b.end||a.start-b.start});var sel=[s[0]];for(var i=1;i<s.length;i++){if(s[i].start>=sel[sel.length-1].end)sel.push(s[i])}return sel}
+function countConflicts(iv,all){var c=0;for(var i=0;i<all.length;i++){if(all[i]===iv)continue;if(all[i].start<iv.end&&all[i].end>iv.start)c++}return c}
+function solveWithStrat(ivs,strategy){if(ivs.length===0)return[];var sorted;if(strategy==="earliest_start")sorted=ivs.slice().sort(function(a,b){return a.start-b.start||a.end-b.end});else if(strategy==="shortest")sorted=ivs.slice().sort(function(a,b){return(a.end-a.start)-(b.end-b.start)||a.end-b.end});else if(strategy==="latest_finish")sorted=ivs.slice().sort(function(a,b){return b.end-a.end||b.start-a.start});else if(strategy==="fewest_conflicts"){sorted=ivs.slice().map(function(iv){return Object.assign({},iv,{conflicts:countConflicts(iv,ivs)})}).sort(function(a,b){return a.conflicts-b.conflicts||a.end-b.end})}else if(strategy==="most_conflicts"){sorted=ivs.slice().map(function(iv){return Object.assign({},iv,{conflicts:countConflicts(iv,ivs)})}).sort(function(a,b){return b.conflicts-a.conflicts||a.end-b.end})}else{sorted=ivs.slice()}var sel=[sorted[0]];for(var i=1;i<sorted.length;i++){if(sorted[i].start>=sel[sel.length-1].end)sel.push(sorted[i])}return sel}
+var ACT_STRATS=[
+  {key:"earliest_start",label:"Earliest Start",color:"#2962FF",hint:"One long activity starting at 0 blocks several short ones"},
+  {key:"shortest",label:"Shortest",color:"#00897B",hint:"A tiny interval in the middle bridges two groups of longer ones"},
+  {key:"fewest_conflicts",label:"Fewest Conflicts",color:"#E57200",hint:"Clusters of overlapping intervals with a low-conflict bridge"},
+  {key:"latest_finish",label:"Latest Finish",color:"#D32F2F",hint:"A long activity finishing last blocks many earlier ones"},
+  {key:"most_conflicts",label:"Most Conflicts",color:"#7B1FA2",hint:"The busiest interval overlaps everything, locking you out"},
+];
+var ACT_GRID=20,ACT_ROWS=8,ACT_CELL=30,ACT_PAD=30;
+var ACT_W=ACT_PAD+ACT_GRID*ACT_CELL;
+var ACT_ROW_H=32;
+var ACT_EXAMPLES={
+  earliest_start:[{start:0,end:15,row:0,id:1},{start:0,end:4,row:1,id:2},{start:5,end:9,row:2,id:3},{start:10,end:14,row:3,id:4},{start:15,end:19,row:4,id:5}],
+  shortest:[{start:0,end:5,row:0,id:1},{start:4,end:7,row:1,id:2},{start:6,end:11,row:2,id:3},{start:11,end:16,row:3,id:4},{start:16,end:20,row:4,id:5}],
+  fewest_conflicts:[{start:0,end:4,row:0,id:1},{start:0,end:4,row:1,id:2},{start:3,end:7,row:2,id:3},{start:6,end:10,row:3,id:4},{start:6,end:10,row:4,id:5},{start:10,end:14,row:5,id:6},{start:10,end:14,row:6,id:7}],
+  latest_finish:[{start:0,end:4,row:0,id:1},{start:5,end:9,row:1,id:2},{start:10,end:14,row:2,id:3},{start:5,end:20,row:3,id:4}],
+  most_conflicts:[{start:0,end:4,row:0,id:1},{start:2,end:8,row:1,id:2},{start:3,end:10,row:2,id:3},{start:5,end:12,row:3,id:4},{start:9,end:14,row:4,id:5},{start:13,end:18,row:5,id:6}],
+};
 
 function Arrow({ax,ay,bx,by,col,sw}){const dx=bx-ax,dy=by-ay,len=Math.sqrt(dx*dx+dy*dy),ux=dx/len,uy=dy/len,sx=ax+ux*20,sy=ay+uy*20,ex=bx-ux*24,ey=by-uy*24,aL=10,aA=0.4;const pts=`${ex},${ey} ${ex-aL*(ux*Math.cos(aA)-uy*Math.sin(aA))},${ey-aL*(uy*Math.cos(aA)+ux*Math.sin(aA))} ${ex-aL*(ux*Math.cos(-aA)-uy*Math.sin(-aA))},${ey-aL*(uy*Math.cos(-aA)+ux*Math.sin(-aA))}`;return(<g><line x1={sx}y1={sy}x2={ex}y2={ey}stroke={col}strokeWidth={sw}strokeLinecap="round"/><polygon points={pts}fill={col}/></g>)}
 
@@ -179,11 +201,20 @@ export default function App(){
   const[djFb,setDjFb]=useState(null);
   const[examMode,setExamMode]=useState(false);
   const[examSubmitted,setExamSubmitted]=useState(false);
+  // Activity selection state
+  const[actStrat,setActStrat]=useState("earliest_start");
+  const[actIntervals,setActIntervals]=useState([]);
+  const[actDrawing,setActDrawing]=useState(null);
+  const[actFb,setActFb]=useState(null);
+  const[actShowSol,setActShowSol]=useState(false);
+  const[actShowHint,setActShowHint]=useState(false);
+  const actSvgRef=useRef(null);
 
   const{nodes,edges}=graph;
   const nMap=useMemo(()=>Object.fromEntries(nodes.map(n=>[n.id,n])),[nodes]);
   const selSet=useMemo(()=>new Set(selOrder),[selOrder]);
   const isD=algo==="dijkstra";
+  const isA=algo==="activity";
 
   const djSol=useMemo(()=>{if(!isD)return null;try{return solveDJ(nodes,edges,djSource)}catch{return null}},[isD,nodes,edges,djSource]);
 
@@ -228,6 +259,22 @@ export default function App(){
     // Normal mode with validation
     if(selOrder.includes(i)){if(selOrder[selOrder.length-1]===i){setSelOrder(p=>p.slice(0,-1));setErrors(p=>{const s=new Set(p);s.delete(i);return s});setErrorMsg(null)}setResult(null);setShowSteps(false);return}const cn=algo==="kruskal"?kNext(edges,selOrder):pNext(nodes,edges,startNode,selOrder);if(i===cn){setSelOrder(p=>[...p,i]);setErrors(p=>{const s=new Set(p);s.delete(i);return s});setErrorMsg(null);setSuccessMsg("Correct!");setTimeout(()=>setSuccessMsg(null),1200);if(selOrder.length+1===nodes.length-1){const tw=[...selOrder,i].reduce((s,x)=>s+edges[x].w,0);setResult({valid:true,reason:`Perfect! Weight = ${tw}.`});setSuccessMsg(null)}}else{setErrors(p=>new Set([...p,i]));const e=edges[i];if(algo==="kruskal"){const ce=edges[cn];if(e.w>ce.w)setErrorMsg(`w=${e.w} isn't next — lighter (w=${ce.w}) exists.`);else setErrorMsg(`${e.from}–${e.to} creates a cycle.`)}else{const ce=edges[cn];const inT=new Set([startNode]);for(const x of selOrder){inT.add(edges[x].from);inT.add(edges[x].to)}const fi=inT.has(e.from),ti=inT.has(e.to);if(fi&&ti)setErrorMsg("Both in tree — cycle.");else if(!fi&&!ti)setErrorMsg("Neither in tree.");else setErrorMsg(`Valid cut, but ${ce.from}–${ce.to} (w=${ce.w}) is cheaper.`)}setTimeout(()=>{setErrors(p=>{const s=new Set(p);s.delete(i);return s});setErrorMsg(null)},2200)}if(!(i===cn&&selOrder.length+1===nodes.length-1)){setResult(null);setShowSteps(false)}},[selOrder,edges,nodes,algo,startNode,isD,examMode,examSubmitted]);
 
+  // Activity selection handlers
+  const actOptResult=useMemo(()=>solveOptimal(actIntervals),[actIntervals]);
+  const actStratResult=useMemo(()=>solveWithStrat(actIntervals,actStrat),[actIntervals,actStrat]);
+  const actStratObj=ACT_STRATS.find(function(s){return s.key===actStrat});
+  const actGetGridPos=useCallback(function(e){var rect=actSvgRef.current.getBoundingClientRect();var x=e.clientX-rect.left-ACT_PAD;var y=e.clientY-rect.top;var col=Math.round(x/ACT_CELL);var row=Math.floor(y/ACT_ROW_H);return{col:Math.max(0,Math.min(ACT_GRID,col)),row:Math.max(0,Math.min(ACT_ROWS-1,row))}},[]);
+  const actMouseDown=useCallback(function(e){var pos=actGetGridPos(e);var existing=actIntervals.findIndex(function(iv){return iv.row===pos.row&&pos.col>=iv.start&&pos.col<=iv.end});if(existing>=0){setActIntervals(function(prev){return prev.filter(function(_,i){return i!==existing})});setActFb(null);setActShowSol(false);return}setActDrawing({row:pos.row,startCol:pos.col,currentCol:pos.col})},[actGetGridPos,actIntervals]);
+  const actMouseMove=useCallback(function(e){if(!actDrawing)return;var pos=actGetGridPos(e);setActDrawing(function(prev){return{row:prev.row,startCol:prev.startCol,currentCol:pos.col}})},[actDrawing,actGetGridPos]);
+  const actMouseUp=useCallback(function(){if(!actDrawing)return;var s=Math.min(actDrawing.startCol,actDrawing.currentCol);var en=Math.max(actDrawing.startCol,actDrawing.currentCol);if(en-s>=1){setActIntervals(function(prev){return prev.concat([{start:s,end:en,row:actDrawing.row,id:Date.now()}])});setActFb(null);setActShowSol(false)}setActDrawing(null)},[actDrawing]);
+  const actCheck=useCallback(function(){if(actIntervals.length<2){setActFb({ok:false,msg:"Draw at least 2 intervals."});return}var oC=actOptResult.length,sC=actStratResult.length;if(sC<oC)setActFb({ok:true,msg:"Valid counterexample! \""+actStratObj.label+"\" picks "+sC+", but optimal picks "+oC+"."});else setActFb({ok:false,msg:"Not yet. \""+actStratObj.label+"\" picks "+sC+", same as optimal ("+oC+"). Adjust intervals."})},[actIntervals,actOptResult,actStratResult,actStratObj]);
+  const actClear=useCallback(function(){setActIntervals([]);setActFb(null);setActShowSol(false);setActShowHint(false)},[]);
+  const actLoadExample=useCallback(function(){setActIntervals(ACT_EXAMPLES[actStrat]||[]);setActFb(null);setActShowSol(false)},[actStrat]);
+  const actIsInOpt=function(iv){return actOptResult.some(function(o){return o.start===iv.start&&o.end===iv.end})};
+  const actIsInStrat=function(iv){return actStratResult.some(function(o){return o.start===iv.start&&o.end===iv.end})};
+  var actDrawStart=actDrawing?Math.min(actDrawing.startCol,actDrawing.currentCol):0;
+  var actDrawEnd=actDrawing?Math.max(actDrawing.startCol,actDrawing.currentCol):0;
+
   const submitExam=useCallback(()=>{
     if(!examMode)return;
     const correct=algo==="kruskal"?kOrd(edges):pMST(nodes,edges,startNode).order;
@@ -253,11 +300,15 @@ export default function App(){
   const iS={background:"#f2f2f5",border:"1px solid #3a4570",borderRadius:5,color:"#E57200",fontFamily:"monospace",fontSize:"0.8rem",fontWeight:700,padding:"4px 6px",width:48,textAlign:"center",outline:"none"};
   const ksIS={...iS,width:90,fontSize:"0.95rem",padding:"7px 10px"};
 
-  const TABS=[["kruskal","Kruskal's","#2962FF"],["prim","Prim's","#00897B"],["dijkstra","Dijkstra's","#E57200"]];
+  const TABS=[["kruskal","Kruskal's","#2962FF"],["prim","Prim's","#00897B"],["dijkstra","Dijkstra's","#E57200"],["activity","Activity Select","#7B1FA2"]];
 
   return (
     <div style={{background:"#ffffff",minHeight:"100vh",padding:"16px 12px",fontFamily:"'Segoe UI',system-ui,sans-serif",color:"#1a1a2a"}}>
-      <h1 style={{textAlign:"center",fontSize:"1.2rem",fontWeight:800,margin:0,letterSpacing:"0.05em",background:"linear-gradient(135deg,#E57200,#D32F2F)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{isD?"Dijkstra's Trainer":examMode?"MST Builder — Exam Mode":"MST Builder"}</h1>
+      <div style={{display:"flex",gap:16,maxWidth:1200,margin:"0 auto",alignItems:"flex-start",flexWrap:"wrap"}}>
+        {/* Main tool - left side */}
+        <div style={{flex:"1 1 600px",minWidth:0}}>
+
+      <h1 style={{textAlign:"center",fontSize:"1.2rem",fontWeight:800,margin:"0 0 10px",letterSpacing:"0.05em",background:"linear-gradient(135deg,#E57200,#D32F2F)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{isA?"Activity Selection":isD?"Dijkstra's Trainer":examMode?"MST Builder — Exam Mode":"MST Builder"}</h1>
 
       {/* Tabs */}
       <div style={{display:"flex",justifyContent:"center",gap:3,margin:"10px 0 6px",flexWrap:"wrap"}}>
@@ -267,7 +318,7 @@ export default function App(){
       </div>
 
       {/* Exam mode toggle */}
-      {!isD && (
+      {!isD && !isA && (
         <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,margin:"6px 0 2px"}}>
           <span style={{fontFamily:"monospace",fontSize:"0.7rem",color:"#888898"}}>Mode:</span>
           <button onClick={()=>{setExamMode(false);setExamSubmitted(false);resetCommon()}} style={{...B,padding:"4px 12px",fontSize:"0.68rem",background:!examMode?"#2e8b5715":"#eeeef2",border:"1.5px solid "+(examMode?"#d8d8e0":"#2e8b57"),color:!examMode?"#2e8b57":"#999"}}>Practice</button>
@@ -276,7 +327,7 @@ export default function App(){
       )}
 
       {/* Instructions */}
-      <p style={{textAlign:"center",color:"#888898",fontSize:"0.68rem",margin:"2px 0 8px",fontFamily:"monospace",maxWidth:500,marginLeft:"auto",marginRight:"auto"}}>
+      {!isA && <p style={{textAlign:"center",color:"#888898",fontSize:"0.68rem",margin:"2px 0 8px",fontFamily:"monospace",maxWidth:500,marginLeft:"auto",marginRight:"auto"}}>
         {examMode
           ? "Select the edges that form the MST. No feedback — click Submit when done."
           : isD
@@ -284,12 +335,77 @@ export default function App(){
             : algo==="kruskal"
               ? "Click edges in Kruskal's order (lightest first, skip if cycle). Click last edge to undo."
               : "Click edges in Prim's order (cheapest cut edge from tree). Pick a start node above."}
-      </p>
+      </p>}
 
-      {!isD && !examMode && <TutorialDemo />}
+      {!isD && !isA && !examMode && <TutorialDemo />}
+
+      {/* ═══ ACTIVITY SELECTION UI ═══ */}
+      {isA && (
+        <div style={{maxWidth:680,margin:"0 auto"}}>
+          <p style={{textAlign:"center",color:"#888898",fontSize:"0.68rem",margin:"2px 0 8px",fontFamily:"monospace"}}>
+            Draw intervals to disprove a wrong greedy strategy. Click existing to delete.
+          </p>
+          <div style={{display:"flex",justifyContent:"center",gap:4,marginBottom:10,flexWrap:"wrap"}}>
+            {ACT_STRATS.map(function(s){return(
+              <button key={s.key}onClick={function(){setActStrat(s.key);setActFb(null);setActShowSol(false);setActShowHint(false)}}style={{border:"none",borderRadius:8,fontWeight:700,fontSize:"0.68rem",cursor:"pointer",fontFamily:"inherit",padding:"5px 10px",background:actStrat===s.key?s.color+"15":"#eeeef2",border:"1.5px solid "+(actStrat===s.key?s.color:"#d8d8e0"),color:actStrat===s.key?s.color:"#999"}}>{s.label}</button>
+            )})}
+          </div>
+          <div style={{textAlign:"center",padding:"8px 14px",borderRadius:8,background:"#f5f5f8",border:"1px solid "+(actStratObj.color)+"33",fontFamily:"monospace",fontSize:"0.73rem",marginBottom:10}}>
+            Disprove: "<span style={{color:actStratObj.color,fontWeight:700}}>{actStratObj.label}</span>" always gives the most activities
+          </div>
+          <div style={{borderRadius:12,background:"#fafafa",border:"1px solid #d0d0d8",padding:"10px",marginBottom:10,overflowX:"auto"}}>
+            <svg ref={actSvgRef}width={ACT_W}height={ACT_ROWS*ACT_ROW_H+14}style={{cursor:"crosshair",display:"block",margin:"0 auto"}}
+              onMouseDown={actMouseDown}onMouseMove={actMouseMove}onMouseUp={actMouseUp}onMouseLeave={function(){if(actDrawing)actMouseUp()}}>
+              {Array.from({length:ACT_GRID+1},function(_,i){return(
+                <g key={"ag"+i}><line x1={ACT_PAD+i*ACT_CELL}y1={0}x2={ACT_PAD+i*ACT_CELL}y2={ACT_ROWS*ACT_ROW_H}stroke="#e0e0e6"strokeWidth={1}/><text x={ACT_PAD+i*ACT_CELL}y={ACT_ROWS*ACT_ROW_H+12}textAnchor="middle"fill="#aaa"fontFamily="monospace"fontSize="8">{i}</text></g>
+              )})}
+              {Array.from({length:ACT_ROWS+1},function(_,i){return <line key={"ar"+i}x1={ACT_PAD}y1={i*ACT_ROW_H}x2={ACT_W}y2={i*ACT_ROW_H}stroke="#eee"strokeWidth={1}/>})}
+              {Array.from({length:ACT_ROWS},function(_,i){return <text key={"arl"+i}x={14}y={i*ACT_ROW_H+ACT_ROW_H/2+1}textAnchor="middle"dominantBaseline="central"fill="#ccc"fontFamily="monospace"fontSize="9">{i+1}</text>})}
+              {actIntervals.map(function(iv){var x1=ACT_PAD+iv.start*ACT_CELL;var x2=ACT_PAD+iv.end*ACT_CELL;var cy=iv.row*ACT_ROW_H+ACT_ROW_H/2;var lineCol="#666";if(actShowSol){var inO=actIsInOpt(iv),inS=actIsInStrat(iv);if(inO)lineCol="#2e8b57";else if(inS)lineCol=actStratObj.color;else lineCol="#ccc"}return(
+                <g key={iv.id}style={{cursor:"pointer"}}><line x1={x1}y1={cy}x2={x2}y2={cy}stroke={lineCol}strokeWidth={3}strokeLinecap="round"/><circle cx={x1}cy={cy}r={5}fill={lineCol}/><circle cx={x2}cy={cy}r={5}fill={lineCol}/></g>
+              )})}
+              {actDrawing&&actDrawEnd-actDrawStart>=1&&(
+                <g><line x1={ACT_PAD+actDrawStart*ACT_CELL}y1={actDrawing.row*ACT_ROW_H+ACT_ROW_H/2}x2={ACT_PAD+actDrawEnd*ACT_CELL}y2={actDrawing.row*ACT_ROW_H+ACT_ROW_H/2}stroke={actStratObj.color}strokeWidth={3}strokeLinecap="round"opacity={0.6}/><circle cx={ACT_PAD+actDrawStart*ACT_CELL}cy={actDrawing.row*ACT_ROW_H+ACT_ROW_H/2}r={5}fill={actStratObj.color}opacity={0.6}/><circle cx={ACT_PAD+actDrawEnd*ACT_CELL}cy={actDrawing.row*ACT_ROW_H+ACT_ROW_H/2}r={5}fill={actStratObj.color}opacity={0.6}/></g>
+              )}
+            </svg>
+            {actShowSol&&actIntervals.length>0&&(
+              <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:6,fontFamily:"monospace",fontSize:"0.65rem"}}>
+                <span style={{color:"#2e8b57"}}>{"● Optimal (earliest finish): "+actOptResult.length}</span>
+                <span style={{color:actStratObj.color}}>{"● "+actStratObj.label+": "+actStratResult.length}</span>
+                <span style={{color:"#ccc"}}>{"● Not selected"}</span>
+              </div>
+            )}
+          </div>
+          <div style={{display:"flex",justifyContent:"center",gap:7,marginBottom:10,flexWrap:"wrap"}}>
+            <button onClick={actCheck}style={{border:"none",borderRadius:8,fontWeight:700,fontSize:"0.8rem",cursor:"pointer",fontFamily:"inherit",padding:"8px 20px",background:"linear-gradient(135deg,"+actStratObj.color+","+actStratObj.color+"cc)",color:"#fff"}}>Check</button>
+            <button onClick={function(){setActShowSol(true)}}style={{border:"none",borderRadius:8,fontWeight:700,fontSize:"0.8rem",cursor:"pointer",fontFamily:"inherit",padding:"8px 20px",background:"#eeeef2",border:"1px solid #d8d8e0",color:"#888898"}}>Show Solutions</button>
+            <button onClick={actClear}style={{border:"none",borderRadius:8,fontWeight:700,fontSize:"0.8rem",cursor:"pointer",fontFamily:"inherit",padding:"8px 20px",background:"#eeeef2",border:"1px solid #d8d8e0",color:"#888898"}}>Clear</button>
+            <button onClick={actLoadExample}style={{border:"none",borderRadius:8,fontWeight:700,fontSize:"0.8rem",cursor:"pointer",fontFamily:"inherit",padding:"8px 20px",background:"#eeeef2",border:"1px solid #d8d8e0",color:"#888898"}}>Load Example</button>
+          </div>
+          <div style={{textAlign:"center",marginBottom:8}}>
+            <span onClick={function(){setActShowHint(!actShowHint)}}style={{fontFamily:"monospace",fontSize:"0.65rem",color:"#999",cursor:"pointer",textDecoration:"underline"}}>{actShowHint?"hide hint":"hint"}</span>
+            {actShowHint&&<div style={{fontFamily:"monospace",fontSize:"0.72rem",color:"#777",marginTop:4,fontStyle:"italic"}}>{actStratObj.hint}</div>}
+          </div>
+          {actFb&&(
+            <div style={{maxWidth:520,margin:"0 auto",padding:"10px 14px",borderRadius:8,background:actFb.ok?"rgba(46,139,87,0.08)":"rgba(255,70,70,0.07)",border:"1px solid "+(actFb.ok?"rgba(46,139,87,0.3)":"rgba(255,70,70,0.25)"),color:actFb.ok?"#2e8b57":"#ff6b6b",fontFamily:"monospace",fontSize:"0.78rem",fontWeight:600,textAlign:"center"}}>{actFb.ok?"✓ ":"✗ "}{actFb.msg}</div>
+          )}
+          {actShowSol&&actIntervals.length>0&&(
+            <div style={{maxWidth:520,margin:"12px auto 0",display:"flex",gap:14,flexWrap:"wrap",justifyContent:"center"}}>
+              <div style={{flex:"1 1 200px",padding:"10px 14px",borderRadius:8,background:"#f5f5f8",border:"1px solid #2e8b5733",fontFamily:"monospace",fontSize:"0.72rem"}}>
+                <div style={{color:"#2e8b57",fontWeight:700,marginBottom:4}}>{"Optimal (Earliest Finish): "+actOptResult.length}</div>
+                {actOptResult.map(function(iv,i){return <div key={i}style={{color:"#666"}}>{(i+1)+". ["+iv.start+", "+iv.end+")"}</div>})}
+              </div>
+              <div style={{flex:"1 1 200px",padding:"10px 14px",borderRadius:8,background:"#f5f5f8",border:"1px solid "+actStratObj.color+"33",fontFamily:"monospace",fontSize:"0.72rem"}}>
+                <div style={{color:actStratObj.color,fontWeight:700,marginBottom:4}}>{actStratObj.label+": "+actStratResult.length}</div>
+                {actStratResult.map(function(iv,i){return <div key={i}style={{color:"#666"}}>{(i+1)+". ["+iv.start+", "+iv.end+")"}</div>})}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══ GRAPH-BASED UI (Kruskal/Prim/Dijkstra) ═══ */}
-      {(
+      {!isA && (
         <div>
           {algo==="prim"&&<div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:6,marginBottom:6,fontFamily:"monospace",fontSize:"0.74rem",color:"#445"}}>Start:<div style={{display:"flex",gap:3}}>{nodes.map(n=>(<button key={n.id}onClick={()=>{setStartNode(n.id);clear()}}style={{width:28,height:26,borderRadius:5,border:"none",cursor:"pointer",fontFamily:"monospace",fontWeight:700,fontSize:"0.72rem",background:startNode===n.id?"#1a3a2a":"#eeeef2",color:startNode===n.id?"#E57200":"#556",outline:startNode===n.id?"1.5px solid #E57200":"1px solid #d8d8e0"}}>{n.id}</button>))}</div></div>}
 
@@ -349,16 +465,37 @@ export default function App(){
       )}
 
       {/* Buttons */}
-      <div style={{display:"flex",justifyContent:"center",gap:7,marginTop:14,flexWrap:"wrap"}}>
+      {!isA && <div style={{display:"flex",justifyContent:"center",gap:7,marginTop:14,flexWrap:"wrap"}}>
         <button onClick={clear} style={G}>Clear</button>
         {!examMode&&<button onClick={reveal} style={G}>Reveal</button>}
         {!isD&&!examMode&&<button onClick={()=>setShowSteps(s=>!s)} style={G}>{showSteps?"Hide Steps":"Show Steps"}</button>}
         {examMode&&!examSubmitted&&!isD&&<button onClick={submitExam} style={{...B,background:"linear-gradient(135deg,#D32F2F,#b71c1c)",color:"#fff",boxShadow:"0 2px 10px rgba(211,47,47,0.25)"}}>Submit Answer</button>}
         <button onClick={fresh} style={{...B,background:"linear-gradient(135deg,#E57200,#cc6500)",color:"#222",boxShadow:"0 2px 10px rgba(229,114,0,0.25)"}}>New Graph</button>
         {isD&&<button onClick={loadLecture} style={{...G,borderColor:"#E57200",color:"#E57200"}}>Lecture Graph</button>}
-      </div>
+      </div>}
 
-      {result&&<div style={{maxWidth:520,margin:"10px auto 0",padding:"10px 16px",borderRadius:9,background:result.valid?"rgba(46,139,87,0.1)":"rgba(255,70,70,0.08)",border:"1px solid "+(result.valid?"rgba(46,139,87,0.35)":"rgba(255,70,70,0.3)"),color:result.valid?"#2e8b57":"#ff6b6b",fontFamily:"monospace",fontSize:"0.78rem",textAlign:"center",fontWeight:600}}>{result.valid?"✓ ":"✗ "}{result.reason}</div>}
+      {!isA&&result&&<div style={{maxWidth:520,margin:"10px auto 0",padding:"10px 16px",borderRadius:9,background:result.valid?"rgba(46,139,87,0.1)":"rgba(255,70,70,0.08)",border:"1px solid "+(result.valid?"rgba(46,139,87,0.35)":"rgba(255,70,70,0.3)"),color:result.valid?"#2e8b57":"#ff6b6b",fontFamily:"monospace",fontSize:"0.78rem",textAlign:"center",fontWeight:600}}>{result.valid?"✓ ":"✗ "}{result.reason}</div>}
+
+        </div>{/* end main tool */}
+
+        {/* Video sidebar - right side */}
+        <div style={{flex:"0 0 280px",position:"sticky",top:16,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{fontFamily:"monospace",fontSize:"0.7rem",color:"#999",textAlign:"center",fontWeight:600}}>Video Walkthroughs</div>
+          {[
+            {id:"hR6qRgXKZIw",t:541,title:"Dijkstra's Algorithm"},
+            {id:"whB7UjMMSD4",t:445,title:"Kruskal's Algorithm"},
+          ].map(function(v,i){return(
+            <a key={i} href={"https://www.youtube.com/watch?v="+v.id+(v.t?"&t="+v.t+"s":"")} target="_blank" rel="noopener noreferrer" style={{display:"block",textDecoration:"none",borderRadius:10,overflow:"hidden",border:"1px solid #d0d0d8",background:"#000",position:"relative"}}>
+              <img src={"https://i.ytimg.com/vi/"+v.id+"/hqdefault.jpg"} alt={v.title} style={{width:"100%",display:"block",opacity:0.85}} onError={function(e){e.target.style.display="none"}} />
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:48,height:34,background:"rgba(255,0,0,0.85)",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{width:0,height:0,borderTop:"8px solid transparent",borderBottom:"8px solid transparent",borderLeft:"14px solid #fff",marginLeft:2}}></div>
+              </div>
+              <div style={{padding:"6px 10px",background:"#fafafa",fontFamily:"monospace",fontSize:"0.7rem",color:"#555",fontWeight:600}}>{v.title}</div>
+            </a>
+          )})}
+          <div style={{fontFamily:"monospace",fontSize:"0.58rem",color:"#aaa",textAlign:"center",marginTop:4,lineHeight:1.4,fontStyle:"italic"}}>Inspired and based off the lectures of Professor Aaron Bloomfield</div>
+        </div>
+      </div>{/* end flex container */}
 
       <div style={{textAlign:"center",marginTop:40,paddingBottom:16,fontFamily:"monospace",fontSize:"0.65rem",color:"#b0b0b8"}}>DSA Dojo™ — Built by Ramkrishna Sharma, University of Virginia</div>
     </div>
